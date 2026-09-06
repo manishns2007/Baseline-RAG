@@ -1,0 +1,16 @@
+Place the POCSO Act plain-text file here as:
+
+    data/pocso_act.txt
+
+Encoding: UTF-8
+Format: Plain text (not PDF). If your source is a PDF, copy-paste the text
+        or use a PDF→text converter and save the result here before running
+        the indexing step.
+
+Suggested source: https://legislative.gov.in/sites/default/files/A2012-32.pdf
+(download, extract text, save as pocso_act.txt in this folder)
+
+After placing the file, run in order:
+    python chunker.py        # parse + sanity-check section boundaries
+    python index_builder.py  # build Chroma + BM25 indices
+    python pipeline.py "Your question here"

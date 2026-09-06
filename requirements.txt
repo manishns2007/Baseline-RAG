@@ -1,0 +1,17 @@
+# Phase 1 — Baseline Legal RAG for POCSO Investigations
+# Plain .txt input only; PDF ingestion deferred to Phase 2.
+
+# Embeddings
+sentence-transformers>=2.7.0
+
+# Vector store (local persistent, no server required)
+chromadb>=0.5.0
+
+# Sparse retrieval
+rank_bm25>=0.2.2
+
+# LLM client (Ollama local inference)
+ollama>=0.2.0
+
+# Progress bars
+tqdm>=4.66.0
