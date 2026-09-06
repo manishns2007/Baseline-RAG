@@ -7,36 +7,43 @@ chunk_id, chunk_index, has_proviso.
 
 Section boundary detection strategy
 -------------------------------------
-The POCSO Act (and most Indian central acts) uses a consistent format:
+PDF-extracted POCSO text has a specific format that differs from idealised
+plain-text acts:
 
-    <blank line>
-    <section-number>. <Section Title>.-
-    <body text>
-    ...
-    <blank line>
+  • Section headers appear inline with body text — the section number, title,
+    em-dash (—), and first sub-section are all on ONE line:
+      "2. Definitions.—(1) In this Act, unless the context otherwise requires"
 
-Two constraints are applied together to identify a genuine section start,
-rather than relying on the digit-dot pattern alone (which would also match
-cross-references like "under sub-section (1) of section 4." in body text):
+  • There is NO guaranteed blank line before each section start.
 
-  1. The line must match the regex:  ^(\\d{1,3}[A-Z]?)\\.\\s+([A-Z].*)$
-       - 1–3 digit number optionally followed by ONE uppercase letter (e.g. 10A)
-       - literal period
-       - one or more spaces
-       - section title must begin with an uppercase letter
-         (cross-references inside body text typically continue in lowercase)
+  • The PDF extractor injects footnote lines into the body text:
+      "1. The words ..."  (footnote text starting with a digit-dot)
+      bare numbers like "4", "1", "2" on their own line
+      "IndiaCode" page watermarks
 
-  2. The *previous* non-empty line must be blank (empty string after strip).
-       This eliminates most in-sentence digit-dot occurrences because real
-       sections are always preceded by a blank line in well-formatted acts.
+Detection strategy used here
+------------------------------
+  1. PRIMARY regex: ^(\d{1,3}[A-Z]?)\.\s+([A-Z][^.\n]{2,})
+       - 1–3 digits + optional uppercase letter, period, spaces
+       - Title MUST start with uppercase letter and be ≥3 chars before any
+         punctuation — this rules out footnote lines like "1. The words…" whose
+         first word is lowercase after the period, and cross-references whose
+         title fragments are short.
 
-If the source text has non-standard formatting (e.g. no blank lines between
-sections), run `debug_chunk_boundaries()` first and adjust the regex or
-blank-line constraint here.
+  2. NEGATIVE filter: rejects lines that look like footnotes:
+       - Line starts with a digit followed by a period then a LOWERCASE letter
+         OR a digit followed by a star  ("1***")
+       - Line is a bare number, a page artefact ("IndiaCode"), or a bracket-
+         prefixed amendment note ("[(da)…")
+
+  3. TITLE extraction: the portion of the line up to the em-dash (—) or the
+     first opening parenthesis is used as the section title.  This handles
+     the merged header+body format.
+
+Run debug_chunk_boundaries() after any format change to re-verify.
 
 Long sections (>500 words) are split at sub-section boundaries (lines
-starting with optional whitespace + "(N)") while retaining the parent
-section number/title in every resulting chunk's metadata.
+starting with optional whitespace + "(N)") while retaining parent metadata.
 """
 
 import json
@@ -60,16 +67,35 @@ _MAX_WORDS: int = 500
 # Regex patterns
 # ---------------------------------------------------------------------------
 
-# Genuine section header:
-#   Group 1 — section number  (e.g. "1", "10", "10A")
-#   Group 2 — section title   (must start with uppercase letter)
+# PRIMARY section-header pattern for PDF-extracted POCSO text.
+# Matches lines like:
+#   "1. Short title, extent and commencement.—(1) This Act…"
+#   "2. Definitions.—(1) In this Act…"
+#   "10A. Aggravated penetrative sexual assault.—…"
 #
-# Note: the \\s* allows for minor leading whitespace in case the source text
-# has shallow indentation on section numbers (some printed act PDFs do this).
-# Adjust to `^` only if your source is strictly left-aligned.
+# Group 1 — section number (e.g. "1", "2", "10A")
+# Group 2 — everything after the number+period up to end-of-line
+#           (title + body run together; we extract title separately below)
+#
+# Constraint: title portion must start with an uppercase letter and be at
+# least 3 characters before any punctuation to reject short footnote lines.
 _SECTION_RE = re.compile(
-    r"^(\d{1,3}[A-Z]?)\.\s+([A-Z][^\n]*)$"
+    r"^(\d{1,3}[A-Z]?)\.\s+([A-Z][A-Za-z ]{2,})"
 )
+
+# NEGATIVE filter — lines that look like footnotes or PDF artefacts:
+#   "1. The words…"  (footnote: digit-dot-space-lowercase)
+#   "2. 14th November…"  (footnote: digit-dot-space-digit)
+#   bare numbers on their own line, "IndiaCode" watermark
+_FOOTNOTE_RE = re.compile(
+    r"^\d{1,3}\.\s+[a-z0-9]"   # footnote: starts with digit-dot then lowercase/digit
+    r"|^\d+$"                   # bare standalone number (page artefact)
+    r"|^IndiaCode\s*$"          # PDF watermark
+    r"|^\[\("                   # amendment note like "[(da)"
+)
+
+# Em-dash and related separators used between section title and body
+_EMDASH_RE = re.compile(r"[\u2014\u2013\-]{1,2}")
 
 # Sub-section opener: optional whitespace + "(N)" at line start
 # Catches both "    (1) The..." and "(1) The..." forms
@@ -80,17 +106,49 @@ _SUBSECTION_RE = re.compile(r"^\s*\(\d+\)\s+\S")
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _is_section_start(line: str, prev_line_blank: bool) -> Optional[re.Match]:
+def _is_section_start(line: str) -> Optional[re.Match]:
     """
-    Return a regex Match if `line` is a genuine section header, else None.
+    Return a regex Match if `line` looks like a genuine POCSO section header.
 
-    Constraint 1: must match _SECTION_RE (digit-dot + uppercase title start).
-    Constraint 2: the previous non-empty line must have been blank
-                  (section starts are always preceded by a blank line).
+    Strategy (for PDF-extracted text with no guaranteed blank lines):
+      1. Must match _SECTION_RE  (digit-dot + uppercase title ≥3 chars).
+      2. Must NOT match _FOOTNOTE_RE  (footnotes, bare numbers, watermarks).
+
+    The blank-line constraint is intentionally removed here because the
+    PDF-extracted source does not reliably produce blank lines before each
+    section.  If you have a clean plain-text source with blank lines, you
+    can re-add: `if not prev_line_blank: return None` before the FOOTNOTE
+    check for additional precision.
     """
-    if not prev_line_blank:
+    stripped = line.strip()
+    if _FOOTNOTE_RE.match(stripped):
         return None
-    return _SECTION_RE.match(line.strip())
+    return _SECTION_RE.match(stripped)
+
+
+def _extract_title(header_tail: str) -> str:
+    """
+    Extract the section title from the tail portion of a section header line.
+
+    In PDF-extracted POCSO text the line looks like:
+        "Short title, extent and commencement.—(1) This Act…"
+    We want only: "Short title, extent and commencement"
+
+    Strategy: take everything up to the first em-dash (—) or the first
+    opening parenthesis "(", whichever comes first.
+    """
+    # Split on em-dash / en-dash
+    if '\u2014' in header_tail:
+        title = header_tail.split('\u2014')[0]
+    elif '\u2013' in header_tail:
+        title = header_tail.split('\u2013')[0]
+    elif '.—' in header_tail:
+        title = header_tail.split('.—')[0]
+    else:
+        # Fallback: take up to first "(" which starts a sub-section inline
+        paren_idx = header_tail.find('(')
+        title = header_tail[:paren_idx] if paren_idx != -1 else header_tail
+    return _normalise_title(title)
 
 
 def _word_count(text: str) -> int:
@@ -134,6 +192,30 @@ def _split_at_subsections(body_text: str) -> List[str]:
 # Public API
 # ---------------------------------------------------------------------------
 
+def _preprocess(text: str) -> str:
+    """
+    Remove known PDF artefact lines before parsing.
+
+    Strips:
+      - Bare numbers on their own line (page numbers injected by PDF extractor)
+      - "IndiaCode" watermark lines
+      - Footnote markers like "1***" alone on a line
+
+    Does NOT strip footnote text lines ("1. The words…") because those are
+    already handled by _FOOTNOTE_RE in _is_section_start().
+    """
+    cleaned: List[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        # Drop: bare number, "IndiaCode", or isolated "N***" footnote markers
+        if re.match(r'^\d+$', stripped) or re.match(r'^IndiaCode\s*$', stripped):
+            continue
+        if re.match(r'^\d+\*+$', stripped):  # e.g. "1***"
+            continue
+        cleaned.append(line)
+    return "\n".join(cleaned)
+
+
 def parse_chunks(text: str) -> List[Dict]:
     """
     Parse the full POCSO Act text into section-aligned chunks.
@@ -155,6 +237,7 @@ def parse_chunks(text: str) -> List[Dict]:
           chunk_index     — int, 0 for single-chunk sections, 0/1/2… for split ones
           text            — full chunk text (header + body)
     """
+    text = _preprocess(text)
     lines = text.splitlines()
     # Collect raw sections as (number, title, body_lines)
     raw_sections: List[Tuple[str, str, List[str]]] = []
@@ -162,22 +245,30 @@ def parse_chunks(text: str) -> List[Dict]:
     current_num: Optional[str] = None
     current_title: Optional[str] = None
     current_body: List[str] = []
-    prev_line_blank: bool = True  # Treat document start as if preceded by blank
 
     for line in lines:
-        m = _is_section_start(line, prev_line_blank)
+        m = _is_section_start(line)
         if m:
             # Flush previous section
             if current_num is not None:
                 raw_sections.append((current_num, current_title, current_body))
             current_num = m.group(1)
-            current_title = _normalise_title(m.group(2))
-            current_body = []
+            # Extract clean title from the matched tail
+            current_title = _extract_title(m.group(2))
+            # The remainder of the header line (after the title/dash) becomes
+            # the first line of the body
+            full_line = line.strip()
+            # Find where the body starts (after the em-dash or first "(")
+            emdash_pos = full_line.find('\u2014')
+            if emdash_pos != -1:
+                body_start = full_line[emdash_pos + 1:].strip()
+            else:
+                paren_pos = full_line.find('(')
+                body_start = full_line[paren_pos:].strip() if paren_pos != -1 else ""
+            current_body = [body_start] if body_start else []
         else:
             if current_num is not None:
                 current_body.append(line)
-
-        prev_line_blank = (line.strip() == "")
 
     # Flush the final section
     if current_num is not None:
@@ -238,16 +329,16 @@ def debug_chunk_boundaries(text: str) -> None:
         text = open("data/pocso_act.txt", encoding="utf-8").read()
         debug_chunk_boundaries(text)
     """
+    text = _preprocess(text)  # apply same pre-processing as parse_chunks
     lines = text.splitlines()
-    prev_line_blank: bool = True
 
     hits: List[Tuple[int, str, str]] = []  # (lineno, sec_num, title_preview)
 
     for i, line in enumerate(lines, start=1):
-        m = _is_section_start(line, prev_line_blank)
+        m = _is_section_start(line)
         if m:
-            hits.append((i, m.group(1), m.group(2)[:70]))
-        prev_line_blank = (line.strip() == "")
+            title = _extract_title(m.group(2))
+            hits.append((i, m.group(1), title[:70]))
 
     width = 70
     print("=" * width)
