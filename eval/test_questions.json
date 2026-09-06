@@ -1,0 +1,73 @@
+[
+  {
+    "id": "q01",
+    "question": "What constitutes penetrative sexual assault under the POCSO Act?",
+    "category": "definition",
+    "expected_sections": ["3"],
+    "notes": "Direct definition question — Section 3 defines the offence."
+  },
+  {
+    "id": "q02",
+    "question": "What is the minimum punishment for penetrative sexual assault under POCSO?",
+    "category": "punishment",
+    "expected_sections": ["4"],
+    "notes": "Section 4 prescribes the punishment for the Section 3 offence."
+  },
+  {
+    "id": "q03",
+    "question": "What acts constitute aggravated penetrative sexual assault under the POCSO Act?",
+    "category": "definition",
+    "expected_sections": ["5"],
+    "notes": "Section 5 lists the aggravating circumstances — long section likely split into sub-chunks."
+  },
+  {
+    "id": "q04",
+    "question": "What is the punishment for aggravated penetrative sexual assault under POCSO?",
+    "category": "punishment",
+    "expected_sections": ["6"],
+    "notes": "Section 6 prescribes punishment; minimum 20 years, may extend to life."
+  },
+  {
+    "id": "q05",
+    "question": "What are the duties of the Special Court regarding child-friendly procedures during trial?",
+    "category": "procedural",
+    "expected_sections": ["35", "36", "37"],
+    "notes": "Tests procedural provisions around special courts and child-friendly environment."
+  },
+  {
+    "id": "q06",
+    "question": "Who is a 'child' under the POCSO Act and what is the age threshold?",
+    "category": "definition",
+    "expected_sections": ["2"],
+    "notes": "Section 2(d) defines 'child' as any person below 18 years."
+  },
+  {
+    "id": "q07",
+    "question": "What are the reporting obligations imposed on persons who have knowledge of a POCSO offence?",
+    "category": "procedural",
+    "expected_sections": ["19"],
+    "notes": "Section 19 imposes mandatory reporting duties on any person with knowledge of an offence."
+  },
+  {
+    "id": "q08",
+    "question": "What special provisions does POCSO make for recording the statement of a child victim?",
+    "category": "procedural",
+    "expected_sections": ["24", "25", "26"],
+    "notes": "Tests statement-recording and child-sensitive investigative provisions."
+  },
+  {
+    "id": "q09",
+    "question": "Does the POCSO Act impose any punishment for false complaints or false information?",
+    "category": "punishment",
+    "expected_sections": ["22"],
+    "notes": "Section 22 addresses punishment for false complaints — tests a less commonly cited provision."
+  },
+  {
+    "id": "q10",
+    "question": "What is the punishment for dowry death under Section 304B of the Indian Penal Code?",
+    "category": "out_of_scope",
+    "expected_sections": [],
+    "expected_response": "I don't have enough information in the retrieved sections to answer this.",
+    "notes": "OUT-OF-SCOPE trigger — IPC question, not POCSO. Should reliably produce the refusal phrase. Use to validate the basic prompt-level confidence gate."
+  }
+]
