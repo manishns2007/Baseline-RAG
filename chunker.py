@@ -94,6 +94,12 @@ _FOOTNOTE_RE = re.compile(
     r"|^\[\("                   # amendment note like "[(da)"
 )
 
+# POSITIVE requirement: every genuine POCSO section header line contains an
+# em-dash (\u2014) separating the title from the body text.  Footnote lines
+# like "1. The words \u2018except\u2026\u2019" never contain an em-dash.
+# This single check eliminates the remaining footnote false-positives.
+_EMDASH_REQUIRED = '\u2014'  # —
+
 # Em-dash and related separators used between section title and body
 _EMDASH_RE = re.compile(r"[\u2014\u2013\-]{1,2}")
 
@@ -111,17 +117,23 @@ def _is_section_start(line: str) -> Optional[re.Match]:
     Return a regex Match if `line` looks like a genuine POCSO section header.
 
     Strategy (for PDF-extracted text with no guaranteed blank lines):
-      1. Must match _SECTION_RE  (digit-dot + uppercase title ≥3 chars).
+      1. Must match _SECTION_RE  (digit-dot + uppercase title >=3 chars).
       2. Must NOT match _FOOTNOTE_RE  (footnotes, bare numbers, watermarks).
+      3. Must contain an em-dash (\u2014) — POCSO section headers always use
+         the em-dash to separate the title from the body text.  This is the
+         strongest discriminator against footnote lines which never have one.
 
-    The blank-line constraint is intentionally removed here because the
+    The blank-line constraint is intentionally absent because the
     PDF-extracted source does not reliably produce blank lines before each
     section.  If you have a clean plain-text source with blank lines, you
-    can re-add: `if not prev_line_blank: return None` before the FOOTNOTE
-    check for additional precision.
+    can re-add `if not prev_line_blank: return None` for extra precision.
     """
     stripped = line.strip()
+    # Footnote / artefact filter
     if _FOOTNOTE_RE.match(stripped):
+        return None
+    # Em-dash is required: genuine section headers always have one
+    if _EMDASH_REQUIRED not in stripped:
         return None
     return _SECTION_RE.match(stripped)
 
@@ -363,7 +375,7 @@ def save_chunks(chunks: List[Dict], path: str = CHUNKS_OUTPUT_PATH) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(chunks, f, ensure_ascii=False, indent=2)
-    print(f"[chunker] Saved {len(chunks)} chunks → {path}")
+    print(f"[chunker] Saved {len(chunks)} chunks -> {path}")
 
 
 def load_chunks(path: str = CHUNKS_OUTPUT_PATH) -> List[Dict]:
